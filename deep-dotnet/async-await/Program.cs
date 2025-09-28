@@ -9,9 +9,23 @@ using System.Runtime.ExceptionServices;
 //                    but really that what it is and everything else is kind of an optimization.
 //
 
-Console.Write("Hello, ");
-MyTask.Delay(5000).ContinueWith(() => Console.Write("Bohdan!")).Wait();
+Console.Write("Hello,");
+//MyTask.Delay(5000).ContinueWith(() => Console.Write("Bohdan!")).Wait();
 
+MyTask.Delay(3000).ContinueWith(delegate
+{
+    Console.Write(" World!");
+    return MyTask.Delay(2000).ContinueWith(delegate
+    {
+        Console.Write(" And Bohdan!");
+        return MyTask.Delay(2000).ContinueWith(delegate
+        {
+            Console.Write(" THE END!");
+        });
+    });
+}).Wait();
+
+return 0;
 Console.ReadLine();
 
 AsyncLocal<int> myCounter = new AsyncLocal<int>(); // works because of 'execution context'
@@ -158,6 +172,51 @@ public class MyTask
         return resultTask;
     }
 
+    public MyTask ContinueWith(Func<MyTask> continuation)
+    {
+        MyTask resultTask = new MyTask();
+
+        Action callback = () =>
+        {
+            try
+            {
+                MyTask next = continuation();
+                next.ContinueWith(delegate
+                {
+                    if (next._exception is null)
+                    {
+                        resultTask.SetResult();
+                    }
+                    else
+                    {
+                        resultTask.SetException(next._exception);
+                    }
+                });
+                //continuation();
+            }
+            catch (Exception e)
+            {
+                resultTask.SetException(e);
+                return;
+            }
+        };
+        
+        lock (this)
+        {
+            if (_isCompleted)
+            {
+                MyThreadPool.QueueUserWorkItem(callback);
+            }
+            else
+            {
+                _continuation = callback;
+                _context = ExecutionContext.Capture();
+            }
+        }
+        
+        return resultTask;
+    }
+    
     public static MyTask Run(Action action)
     {
         MyTask resultTask = new MyTask();
