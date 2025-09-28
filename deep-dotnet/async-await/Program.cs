@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 
 // NOTES:
@@ -9,12 +10,13 @@ using System.Runtime.ExceptionServices;
 //                    but really that what it is and everything else is kind of an optimization.
 //
 
-MyTask.Iterate(PrintAsync(50)).Wait();
-static IEnumerable<MyTask> PrintAsync(int count)
+PrintAsync(50).Wait();
+
+static async Task PrintAsync(int count)
 {
     for (int i = 0; i < count; i++)
     {
-        yield return MyTask.Delay(1000);
+        await MyTask.Delay(1000);
         Console.WriteLine(i);
     }
 }
@@ -90,6 +92,19 @@ public class MyTask
     private Exception? _exception;
     private Action _continuation;
     private ExecutionContext? _context;
+
+    public struct Awaiter(MyTask task) : INotifyCompletion
+    {
+        public Awaiter GetAwaiter() => this;
+        
+        public bool IsCompleted => task._isCompleted;
+        
+        public void OnCompleted(Action continuation) => task.ContinueWith(continuation);
+
+        public void GetResult() => task.Wait();
+    }
+    
+    public Awaiter GetAwaiter() => new(this);
     
     public bool IsCompleted
     {
