@@ -9,6 +9,24 @@ using System.Runtime.ExceptionServices;
 //                    but really that what it is and everything else is kind of an optimization.
 //
 
+MyTask.Iterate(PrintAsync(50)).Wait();
+static IEnumerable<MyTask> PrintAsync(int count)
+{
+    for (int i = 0; i < count; i++)
+    {
+        yield return MyTask.Delay(1000);
+        Console.WriteLine(i);
+    }
+}
+
+for (int i = 0;; i++)
+{
+    /*await*/ MyTask.Delay(1000);
+    Console.WriteLine(i);
+}
+
+return 0;
+
 Console.Write("Hello,");
 //MyTask.Delay(5000).ContinueWith(() => Console.Write("Bohdan!")).Wait();
 
@@ -272,11 +290,41 @@ public class MyTask
         new Timer(_ => resultTask.SetResult()).Change(timeout, -1);
         return resultTask;
     }
+
+    public static MyTask Iterate(IEnumerable<MyTask> tasks)
+    {
+        MyTask resultTask = new MyTask();
+
+        IEnumerator<MyTask> enumerator = tasks.GetEnumerator();
+        void MoveNext()
+        {
+            try
+            {
+                if (enumerator.MoveNext())
+                {
+                    MyTask next = enumerator.Current;
+                    next.ContinueWith(MoveNext);
+                    return;
+                }
+            }
+            catch (Exception e)
+            {
+                resultTask.SetException(e);
+                return;
+            }
+            
+            resultTask.SetResult();
+        }
+        
+        MoveNext();
+
+        return resultTask;
+    }
 }
 
 public static class MyThreadPool
 {
-    public static readonly BlockingCollection<(Action, ExecutionContext?)> s_workItems 
+    static readonly BlockingCollection<(Action, ExecutionContext?)> s_workItems 
         = new BlockingCollection<(Action, ExecutionContext?)>();
     
     public static void QueueUserWorkItem(Action action) => s_workItems.Add((action, ExecutionContext.Capture()));
